@@ -1,0 +1,91 @@
+name: Build Elyzareth Lyric Player Debug APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    name: Build Android Debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Set up Gradle 9.3.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+
+      - name: Accept Android SDK Licenses & Install Platform 36
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Prepare Keystore, Environment & Wrapper
+        run: |
+          # 1. Restore official, stable debug.keystore (preserving identical signature across all builds)
+          if [ -f debug.keystore.base64 ] && [ ! -s debug.keystore ]; then
+            echo "Decoding repository debug.keystore.base64..."
+            base64 -d debug.keystore.base64 > debug.keystore || rm -f debug.keystore
+          fi
+
+          if [ ! -s debug.keystore ]; then
+            echo "Restoring official project debug.keystore from embedded payload..."
+            cat << 'EOF' | base64 -d > debug.keystore
+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
+EOF
+          fi
+
+          # If needed fallback to fresh generation
+          if [ ! -s debug.keystore ]; then
+            keytool -genkey -v \
+              -keystore debug.keystore \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+          echo "Verifying generated keystore:"
+          ls -lh debug.keystore
+
+          # 2. Ensure .env exists for the secrets gradle plugin
+          if [ ! -f .env ]; then
+            if [ -f .env.example ]; then
+              echo "Creating .env from .env.example..."
+              cp .env.example .env
+            else
+              echo "Creating empty .env file..."
+              touch .env
+            fi
+          fi
+
+          # 3. Ensure gradlew executable bit is set
+          if [ -f ./gradlew ]; then
+            chmod +x ./gradlew
+          fi
+
+      - name: Build Debug APK
+        run: |
+          if [ -f ./gradlew ]; then
+            ./gradlew assembleDebug --stacktrace
+          else
+            gradle :app:assembleDebug --stacktrace
+          fi
+
+      - name: Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Elyzareth-Lyric-Player-debug.apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

@@ -1,0 +1,6 @@
+{
+  "name": "ELYZARETH",
+  "description": "Ornate 9:16 lyric player with synchronized lyrics, DSP + EQ audio effects, playlist management, and numbered control audit register.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
