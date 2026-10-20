@@ -13,6 +13,7 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import com.example.MainActivity
+import com.example.audio.DemoAudioGenerator
 import com.example.audio.ElyzarethPlaybackEngine
 import com.example.model.DefaultSongLibrary
 import com.example.model.Song
@@ -116,7 +117,7 @@ class ElyzarethMediaLibraryService : MediaLibraryService() {
                 }
 
                 CATEGORY_SONGS -> {
-                    songs.map { it.toMediaItem() }
+                    songs.map { ensurePlayableSong(it).toMediaItem() }
                 }
 
                 CATEGORY_ARTISTS -> {
@@ -160,16 +161,16 @@ class ElyzarethMediaLibraryService : MediaLibraryService() {
                     when {
                         parentId.startsWith(PREFIX_ARTIST) -> {
                             val artist = parentId.removePrefix(PREFIX_ARTIST)
-                            songs.filter { it.artist.equals(artist, ignoreCase = true) }.map { it.toMediaItem() }
+                            songs.filter { it.artist.equals(artist, ignoreCase = true) }.map { ensurePlayableSong(it).toMediaItem() }
                         }
                         parentId.startsWith(PREFIX_ALBUM) -> {
                             val album = parentId.removePrefix(PREFIX_ALBUM)
-                            songs.filter { it.album.equals(album, ignoreCase = true) }.map { it.toMediaItem() }
+                            songs.filter { it.album.equals(album, ignoreCase = true) }.map { ensurePlayableSong(it).toMediaItem() }
                         }
                         parentId.startsWith(PREFIX_PLAYLIST) -> {
                             val playlistName = parentId.removePrefix(PREFIX_PLAYLIST)
                             val playlists = LocalMediaScanner.getPlaylists(songs)
-                            playlists[playlistName]?.map { it.toMediaItem() } ?: emptyList()
+                            playlists[playlistName]?.map { ensurePlayableSong(it).toMediaItem() } ?: emptyList()
                         }
                         else -> emptyList()
                     }
@@ -187,7 +188,7 @@ class ElyzarethMediaLibraryService : MediaLibraryService() {
             val songs = getCurrentOrScannedSongs()
             val song = songs.find { it.id == mediaId }
             return if (song != null) {
-                Futures.immediateFuture(LibraryResult.ofItem(song.toMediaItem(), null))
+                Futures.immediateFuture(LibraryResult.ofItem(ensurePlayableSong(song).toMediaItem(), null))
             } else {
                 Futures.immediateFuture(LibraryResult.ofError(SessionResult.RESULT_ERROR_BAD_VALUE))
             }
@@ -205,7 +206,7 @@ class ElyzarethMediaLibraryService : MediaLibraryService() {
             for (requested in mediaItems) {
                 val song = songs.find { it.id == requested.mediaId }
                 if (song != null) {
-                    resolvedItems.add(song.toMediaItem())
+                    resolvedItems.add(ensurePlayableSong(song).toMediaItem())
                 } else {
                     resolvedItems.add(requested)
                 }
@@ -229,7 +230,7 @@ class ElyzarethMediaLibraryService : MediaLibraryService() {
             for (requested in mediaItems) {
                 val song = songs.find { it.id == requested.mediaId }
                 if (song != null) {
-                    resolvedItems.add(song.toMediaItem())
+                    resolvedItems.add(ensurePlayableSong(song).toMediaItem())
                 } else {
                     resolvedItems.add(requested)
                 }
@@ -246,7 +247,7 @@ class ElyzarethMediaLibraryService : MediaLibraryService() {
             val targetIdx = songs.indexOfFirst { it.id == current.id }.coerceAtLeast(0)
             val startPos = playbackEngine.currentPositionMs.value
 
-            val items = ImmutableList.copyOf(songs.map { it.toMediaItem() })
+            val items = ImmutableList.copyOf(songs.map { ensurePlayableSong(it).toMediaItem() })
             val result = MediaSession.MediaItemsWithStartPosition(items, targetIdx, startPos)
             return Futures.immediateFuture(result)
         }
@@ -280,10 +281,16 @@ class ElyzarethMediaLibraryService : MediaLibraryService() {
                 it.title.contains(query, ignoreCase = true) ||
                 it.artist.contains(query, ignoreCase = true) ||
                 it.album.contains(query, ignoreCase = true)
-            }.map { it.toMediaItem() }
+            }.map { ensurePlayableSong(it).toMediaItem() }
 
             return Futures.immediateFuture(LibraryResult.ofItemList(ImmutableList.copyOf(matches), params))
         }
+    }
+
+    private fun ensurePlayableSong(song: Song): Song {
+        if (song.fileUri != null) return song
+        val demoUri = DemoAudioGenerator.getDemoAudioUri(applicationContext, song.id, song.durationMs)
+        return song.copy(fileUri = demoUri)
     }
 
     private fun getCurrentOrScannedSongs(): List<Song> {

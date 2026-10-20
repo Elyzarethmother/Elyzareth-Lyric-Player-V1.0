@@ -41,13 +41,14 @@ data class Song(
             })
             .build()
 
-        // Ensure MediaItem always has a valid URI so ExoPlayer's DefaultMediaSourceFactory can build a MediaSource
-        val playUri = fileUri ?: Uri.parse("https://elyzareth.internal/audio/$id.mp3")
-
-        return MediaItem.Builder()
+        val builder = MediaItem.Builder()
             .setMediaId(id)
-            .setUri(playUri)
             .setMediaMetadata(metadata)
-            .build()
+
+        if (fileUri != null) {
+            builder.setUri(fileUri)
+        }
+
+        return builder.build()
     }
 }

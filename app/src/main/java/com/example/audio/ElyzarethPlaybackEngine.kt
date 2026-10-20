@@ -7,6 +7,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -123,6 +124,11 @@ class ElyzarethPlaybackEngine private constructor(private val context: Context) 
                     }
                 }
             }
+
+            override fun onPlayerError(error: PlaybackException) {
+                Log.w("ElyzarethPlaybackEngine", "Playback error gracefully handled: ${error.errorCodeName} - ${error.message}")
+                _isPlaying.value = false
+            }
         })
     }
 
@@ -141,8 +147,14 @@ class ElyzarethPlaybackEngine private constructor(private val context: Context) 
         }
     }
 
+    private fun resolvePlayableSong(song: Song): Song {
+        if (song.fileUri != null) return song
+        val demoUri = DemoAudioGenerator.getDemoAudioUri(context, song.id, song.durationMs)
+        return song.copy(fileUri = demoUri)
+    }
+
     private fun syncExoPlayerPlaylist(songs: List<Song>) {
-        val mediaItems = songs.map { it.toMediaItem() }
+        val mediaItems = songs.map { resolvePlayableSong(it).toMediaItem() }
         player.setMediaItems(mediaItems, false)
         player.prepare()
     }
@@ -168,7 +180,8 @@ class ElyzarethPlaybackEngine private constructor(private val context: Context) 
     }
 
     private fun prepareMediaItemForSong(song: Song, playWhenReady: Boolean) {
-        val item = song.toMediaItem()
+        val playable = resolvePlayableSong(song)
+        val item = playable.toMediaItem()
         player.setMediaItem(item)
         player.prepare()
         player.playWhenReady = playWhenReady
