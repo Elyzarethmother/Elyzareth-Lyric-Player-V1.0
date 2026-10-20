@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.audio.AudioPlayerEngine
 import com.example.data.ProjectStorage
+import com.example.media.LocalMediaScanner
 import com.example.model.ActiveTab
 import com.example.model.AspectRatioMode
 import com.example.model.DefaultSongLibrary
@@ -47,7 +48,7 @@ class LyricPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _isFullscreen = MutableStateFlow(false)
     val isFullscreen: StateFlow<Boolean> = _isFullscreen.asStateFlow()
 
-    private val _isPlaylistVisible = MutableStateFlow(true)
+    private val _isPlaylistVisible = MutableStateFlow(false)
     val isPlaylistVisible: StateFlow<Boolean> = _isPlaylistVisible.asStateFlow()
 
     private val _isSingleSongMode = MutableStateFlow(false)
@@ -82,9 +83,25 @@ class LyricPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val isAuditInspectorOpen = MutableStateFlow(false)
 
     init {
-        _currentSong.value?.let {
-            audioEngine.loadSong(it)
+        // Sync shared playback engine with ViewModel state
+        audioEngine.engine.setPlaylist(_playlist.value, _currentSong.value)
+
+        viewModelScope.launch {
+            audioEngine.engine.currentSong.collect { song ->
+                if (song != null && song.id != _currentSong.value?.id) {
+                    _currentSong.value = song
+                }
+            }
         }
+
+        viewModelScope.launch {
+            audioEngine.engine.playlist.collect { list ->
+                if (list.isNotEmpty() && list != _playlist.value) {
+                    _playlist.value = list
+                }
+            }
+        }
+
         audioEngine.setOnCompletionListener {
             handleSongCompleted()
         }
@@ -107,6 +124,22 @@ class LyricPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    // Scan device MP3 audio from MediaStore
+    fun scanLocalMedia() {
+        viewModelScope.launch {
+            val scanner = LocalMediaScanner(getApplication())
+            val scanned = scanner.scanDeviceAudio()
+            if (scanned.isNotEmpty()) {
+                val current = _playlist.value
+                val existingCustom = current.filter { it.lyrics.isNotEmpty() || it.fileUri != null }
+                val merged = (existingCustom + scanned).distinctBy { it.id }
+                _playlist.value = merged
+                storage.savePlaylist(merged)
+                audioEngine.engine.setPlaylist(merged)
+            }
+        }
+    }
+
     // [01] Playlist Mode
     fun togglePlaylistMode() {
         _isPlaylistVisible.value = !_isPlaylistVisible.value
@@ -119,6 +152,7 @@ class LyricPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _currentSong.value = updated
         _playlist.value = _playlist.value.map { if (it.id == updated.id) updated else it }
         storage.savePlaylist(_playlist.value)
+        audioEngine.engine.setPlaylist(_playlist.value, updated)
     }
 
     // [06] Theme Menu
@@ -169,17 +203,14 @@ class LyricPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     // [18] Shuffle
     fun toggleShuffle() {
-        _isShuffle.value = !_isShuffle.value
+        val next = !_isShuffle.value
+        _isShuffle.value = next
+        audioEngine.engine.setShuffle(next)
     }
 
     // [19] Previous track
     fun playPreviousSong() {
-        val list = _playlist.value
-        if (list.isEmpty()) return
-        val cur = _currentSong.value
-        val curIdx = if (cur != null) list.indexOfFirst { it.id == cur.id } else 0
-        val prevIdx = if (curIdx <= 0) list.size - 1 else curIdx - 1
-        selectSong(list[prevIdx])
+        audioEngine.engine.playPrevious()
     }
 
     // [20] Play/Pause
@@ -192,26 +223,18 @@ class LyricPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     // [21] Next track
     fun playNextSong() {
-        val list = _playlist.value
-        if (list.isEmpty()) return
-        val cur = _currentSong.value
-        val curIdx = if (cur != null) list.indexOfFirst { it.id == cur.id } else 0
-        val nextIdx = if (_isShuffle.value && list.size > 1) {
-            val remaining = list.indices.filter { it != curIdx }
-            remaining.random()
-        } else {
-            (curIdx + 1) % list.size
-        }
-        selectSong(list[nextIdx])
+        audioEngine.engine.playNext()
     }
 
     // [22] Repeat
     fun toggleRepeat() {
-        _repeatMode.value = when (_repeatMode.value) {
+        val next = when (_repeatMode.value) {
             RepeatMode.OFF -> RepeatMode.ALL
             RepeatMode.ALL -> RepeatMode.ONE
             RepeatMode.ONE -> RepeatMode.OFF
         }
+        _repeatMode.value = next
+        audioEngine.engine.setRepeatMode(next)
     }
 
     // [24], [25], [26] Tabs
@@ -235,10 +258,7 @@ class LyricPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun selectSong(song: Song) {
         val wasPlaying = audioEngine.isPlaying.value
         _currentSong.value = song
-        audioEngine.loadSong(song)
-        if (wasPlaying) {
-            audioEngine.play()
-        }
+        audioEngine.engine.selectSong(song, playWhenReady = wasPlaying)
     }
 
     // [09] DSP update
@@ -259,6 +279,7 @@ class LyricPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _currentSong.value = updated
         _playlist.value = _playlist.value.map { if (it.id == updated.id) updated else it }
         storage.savePlaylist(_playlist.value)
+        audioEngine.engine.setPlaylist(_playlist.value, updated)
     }
 
     // [05] More: Import Background Image
@@ -269,6 +290,7 @@ class LyricPlayerViewModel(application: Application) : AndroidViewModel(applicat
             _currentSong.value = updated
             _playlist.value = _playlist.value.map { if (it.id == updated.id) updated else it }
             storage.savePlaylist(_playlist.value)
+            audioEngine.engine.setPlaylist(_playlist.value, updated)
         }
     }
 
@@ -278,6 +300,7 @@ class LyricPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val remaining = _playlist.value.filter { it.id != cur.id }
         _playlist.value = remaining
         storage.savePlaylist(remaining)
+        audioEngine.engine.setPlaylist(remaining)
         if (remaining.isNotEmpty()) {
             selectSong(remaining.first())
         } else {
@@ -292,6 +315,7 @@ class LyricPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _playlist.value = emptyList()
         _currentSong.value = null
         storage.savePlaylist(emptyList())
+        audioEngine.engine.setPlaylist(emptyList())
     }
 
     // [27] Add Songs (load local audio file)
@@ -300,6 +324,7 @@ class LyricPlayerViewModel(application: Application) : AndroidViewModel(applicat
             id = "user_${System.currentTimeMillis()}",
             title = displayName.substringBeforeLast("."),
             artist = "Local Artist",
+            album = "Custom Imports",
             durationMs = durationMs,
             lyrics = emptyList(),
             isFavorite = false,
@@ -308,6 +333,7 @@ class LyricPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val updated = _playlist.value + newSong
         _playlist.value = updated
         storage.savePlaylist(updated)
+        audioEngine.engine.setPlaylist(updated, newSong)
         selectSong(newSong)
     }
 
@@ -348,6 +374,7 @@ class LyricPlayerViewModel(application: Application) : AndroidViewModel(applicat
             val updated = currentList + demo
             _playlist.value = updated
             storage.savePlaylist(updated)
+            audioEngine.engine.setPlaylist(updated, demo)
             selectSong(demo)
         } else {
             selectSong(demo)
@@ -356,6 +383,6 @@ class LyricPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     override fun onCleared() {
         super.onCleared()
-        audioEngine.release()
+        // Retain engine state for background service
     }
 }

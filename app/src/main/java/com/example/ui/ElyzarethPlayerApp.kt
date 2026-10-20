@@ -1,7 +1,9 @@
 package com.example.ui
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -162,6 +164,24 @@ fun ElyzarethPlayerApp(
         }
     }
 
+    // Storage permission launcher for scanning device MP3s
+    val storagePermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        Manifest.permission.READ_MEDIA_AUDIO
+    } else {
+        Manifest.permission.READ_EXTERNAL_STORAGE
+    }
+
+    val storagePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            viewModel.scanLocalMedia()
+            Toast.makeText(context, "Scanning local MP3 library...", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "Storage permission required to scan device MP3s", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     // Background Image Picker Launcher (From [05] More menu)
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -233,8 +253,8 @@ fun ElyzarethPlayerApp(
                             onOpenMoreMenu = { viewModel.isMoreMenuOpen.value = true }
                         )
 
-                        // Central Area: Lyrics View & Right Settings Rail
-                        Row(
+                        // Central Area: Centered Lyrics View & Audit Settings Rail
+                        Box(
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxWidth()
@@ -254,27 +274,35 @@ fun ElyzarethPlayerApp(
                                 onOpenLyricsEditor = {
                                     viewModel.isLyricsEditorOpen.value = true
                                 },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
+                                modifier = Modifier.fillMaxSize()
                             )
 
-                            // Right-Side Settings Rail ([06], [09], [10], [11], [12], [13], [14], [15])
-                            SettingsRail(
-                                isDarkMode = isDarkMode,
-                                isFullscreen = isFullscreen,
-                                aspectRatio = aspectRatio,
-                                showAuditLabels = playerSettings.showAuditLabels,
-                                cleanRecordingMode = playerSettings.cleanRecordingMode,
-                                onOpenThemeMenu = { viewModel.isThemeMenuOpen.value = true },
-                                onOpenDspMenu = { viewModel.isDspMenuOpen.value = true },
-                                onOpenSettings = { viewModel.isSettingsOpen.value = true },
-                                onSetLightTheme = { viewModel.setLightTheme() },
-                                onSetDarkTheme = { viewModel.setDarkTheme() },
-                                onCycleFitLayout = { viewModel.cycleFitLayout() },
-                                onToggleFullscreen = { viewModel.toggleFullscreen() },
-                                onToggleAspectRatio = { viewModel.toggleAspectRatio() }
-                            )
+                            // Quick Settings Rail ([06], [09], [10], [11], [12], [13], [14], [15])
+                            // Displayed in Audit mode so all controls remain testable,
+                            // while normal player screen remains clean and cinematic!
+                            if (playerSettings.showAuditLabels && !playerSettings.cleanRecordingMode) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.CenterEnd)
+                                        .fillMaxHeight()
+                                ) {
+                                    SettingsRail(
+                                        isDarkMode = isDarkMode,
+                                        isFullscreen = isFullscreen,
+                                        aspectRatio = aspectRatio,
+                                        showAuditLabels = playerSettings.showAuditLabels,
+                                        cleanRecordingMode = playerSettings.cleanRecordingMode,
+                                        onOpenThemeMenu = { viewModel.isThemeMenuOpen.value = true },
+                                        onOpenDspMenu = { viewModel.isDspMenuOpen.value = true },
+                                        onOpenSettings = { viewModel.isSettingsOpen.value = true },
+                                        onSetLightTheme = { viewModel.setLightTheme() },
+                                        onSetDarkTheme = { viewModel.setDarkTheme() },
+                                        onCycleFitLayout = { viewModel.cycleFitLayout() },
+                                        onToggleFullscreen = { viewModel.toggleFullscreen() },
+                                        onToggleAspectRatio = { viewModel.toggleAspectRatio() }
+                                    )
+                                }
+                            }
                         }
 
                         // Fixed Audio Playback Section: [16] to [23]
@@ -389,6 +417,14 @@ fun ElyzarethPlayerApp(
                 onLoadDemoSong = { viewModel.loadDemoSong() },
                 onPickBackgroundImage = { imagePickerLauncher.launch("image/*") },
                 onEditLyrics = { viewModel.isLyricsEditorOpen.value = true },
+                onOpenQueue = { viewModel.isQueueOpen.value = true },
+                onOpenSearch = { viewModel.isSearchOpen.value = true },
+                onScanDeviceMusic = { storagePermissionLauncher.launch(storagePermission) },
+                onOpenDspMenu = { viewModel.isDspMenuOpen.value = true },
+                onOpenThemeMenu = { viewModel.isThemeMenuOpen.value = true },
+                onOpenSettings = { viewModel.isSettingsOpen.value = true },
+                onToggleFullscreen = { viewModel.toggleFullscreen() },
+                onToggleAspectRatio = { viewModel.toggleAspectRatio() },
                 onRemoveCurrentSong = { viewModel.removeCurrentSong() },
                 onClearPlaylist = { viewModel.clearPlaylist() },
                 onDismiss = { viewModel.isMoreMenuOpen.value = false }

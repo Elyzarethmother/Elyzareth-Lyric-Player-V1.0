@@ -43,7 +43,7 @@ data class DspSettings(
 
 data class PlayerSettings(
     val autoScrollLyrics: Boolean = true,
-    val showAuditLabels: Boolean = true,
+    val showAuditLabels: Boolean = false,
     val cleanRecordingMode: Boolean = false,
     val autoNextEnabled: Boolean = true
 )
